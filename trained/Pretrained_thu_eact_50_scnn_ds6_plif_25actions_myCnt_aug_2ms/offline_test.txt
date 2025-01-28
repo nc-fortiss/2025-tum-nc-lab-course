@@ -1,0 +1,34 @@
+SVM (Linear)
+Training accuracy 1.0
+Test accuracy     0.85
+------------------------------------
+SVM (RBF)
+Training accuracy 1.0
+Test accuracy     0.85
+------------------------------------
+KNN (k=1)
+Training accuracy 1.0
+Test accuracy     0.75
+------------------------------------
+KNN (k=5)
+Training accuracy 0.84
+Test accuracy     0.76
+------------------------------------
+KNN (k=10)
+Training accuracy 0.81
+Test accuracy     0.77
+------------------------------------
+NCM (cosine)
+Training accuracy 0.73
+Test accuracy     0.71
+------------------------------------
+NCM (Euclidean)
+Training accuracy 0.73
+Test accuracy     0.71
+------------------------------------
+LDA (offline)
+Training accuracy 0.9
+Test accuracy     0.86
+
+
+

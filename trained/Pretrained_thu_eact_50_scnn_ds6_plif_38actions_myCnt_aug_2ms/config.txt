@@ -1,0 +1,7 @@
+Feature extractor config:
+- 1000ms sample length
+- 2ms time bin
+- count frame per polarity
+- 100x100 input resolution
+- 512 feature size
+- PLIF, no decay_input

@@ -1,0 +1,13 @@
+numpy
+matplotlib
+scikit-learn
+seaborn
+pandas
+torch
+torchmetrics
+h5py
+numba
+opencv-python
+tonic
+spikingjelly
+notebook
