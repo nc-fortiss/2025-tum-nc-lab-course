@@ -15,18 +15,10 @@ from torch.utils.data import Dataset, DataLoader
 # import lava.lib.dl.slayer as slayer
 import sys
 
-sys.path.insert(0, '/home/neumeier/Documents/corinne/libs/lava-dl/src')
-import lava.lib.dl.slayer as slayer
-from lava.lib.dl.slayer.utils import quantize as slayer_quantize
 
-sys.path.insert(0, '/home/neumeier/Documents/corinne/libs/spikingjelly')
 from spikingjelly.activation_based import surrogate, neuron, functional, layer
-from spikingjelly.activation_based.lava_exchange import to_lava_blocks, conv2d_to_lava_synapse_conv, to_lava_neuron, quantize_8bit, linear_to_lava_synapse_dense, to_lava_block_conv, to_lava_block_dense
-from spikingjelly.activation_based.lava_exchange import BatchNorm2d as LoihiBatchNorm2d
 
-# from optimizer import Nadam
-#from utils_init import torch_init_LSUV
-from adlif import AdLIF
+from .adlif import AdLIF
 
 def calc_feature_loss(rates, targets):
     loss = nn.CosineEmbeddingLoss().to(rates.device)
@@ -42,74 +34,6 @@ def ann_classifier(y):
     pred = torch.argmax(y, dim=1)
     return pred
 
-def quantize_8bit(weight, descale=False):
-    w_scale = 1 << 6
-    if descale is False:
-        return slayer_quantize(
-            weight, step=2 / w_scale
-        ).clamp(-256 / w_scale, 255 / w_scale)
-    else:
-        return slayer_quantize(
-            weight, step=2 / w_scale
-        ).clamp(-256 / w_scale, 255 / w_scale) * w_scale
-
-def fuse_bn(module):
-    module_output = module
-    if isinstance(module, (nn.Sequential,)):
-        print("[nn.Sequential]\tfusing BN and dropout")
-        idx = 0
-        for idx in range(len(module) - 1):
-            if not isinstance(module[idx], nn.Conv2d) or not isinstance(
-                module[idx + 1], nn.BatchNorm2d
-            ):
-                continue
-            conv = module[idx]
-            bn = module[idx + 1]
-            channels = bn.weight.shape[0]
-            invstd = 1 / torch.sqrt(bn.running_var + bn.eps)
-            conv.weight.data = (
-                conv.weight
-                * bn.weight[:, None, None, None]
-                * invstd[:, None, None, None]
-            )
-            if conv.bias is None:
-                conv.bias = nn.Parameter(torch.zeros(conv.out_channels).to(conv.weight.device))
-            conv.bias.data = (
-                conv.bias - bn.running_mean
-            ) * bn.weight * invstd + bn.bias
-            module[idx + 1] = nn.Identity()
-        for name, child in module.named_children():
-            module_output.add_module(name, fuse_bn(child))
-        del module
-
-    elif isinstance(module, (nn.ModuleList,)):
-        print("[nn.ModuleList]\tfusing BN and dropout")
-        idx = 0
-        for idx in range(len(module) - 1):
-            if not isinstance(module[idx], nn.Conv2d) or not isinstance(
-                module[idx + 1], nn.BatchNorm2d
-            ):
-                continue
-            conv = module[idx]
-            bn = module[idx + 1]
-            channels = bn.weight.shape[0]
-            invstd = 1 / torch.sqrt(bn.running_var + bn.eps)
-            conv.weight.data = (
-                conv.weight
-                * bn.weight[:, None, None, None]
-                * invstd[:, None, None, None]
-            )
-            if conv.bias is None:
-                conv.bias = nn.Parameter(torch.zeros(conv.out_channels).to(conv.weight.device))
-            conv.bias.data = (
-                conv.bias - bn.running_mean
-            ) * bn.weight * invstd + bn.bias
-            module[idx + 1] = nn.Identity()
-        module_output = module
-        del module
-
-    return module_output
-
 
     
 class AllConvPLIFAdLIFSNN(torch.nn.Module):
@@ -124,10 +48,6 @@ class AllConvPLIFAdLIFSNN(torch.nn.Module):
         self.init_tau4 = 2.0  # 1 + np.abs(np.random.randn(4*in_channels)) # 2.0
         # neuron_params_drop = {**neuron_params}
 
-        if quantize:
-            self.quantize = quantize_8bit
-        else:
-            self.quantize = lambda x: x
 
         self.blocks = torch.nn.ModuleList([
             layer.Conv2d(inp_features, channels, kernel_size=3, padding=1, stride=2, bias=self.bias),
@@ -201,17 +121,6 @@ class AllConvPLIFAdLIFSNN(torch.nn.Module):
             (1, -1)
         ).to(spike.device)
 
-    def forward_simclr(self, spike):
-        functional.reset_net(self.blocks)
-        # print(spike.size())
-        spike = spike.permute(4, 0, 1, 2, 3).contiguous()
-        for i, block in enumerate(self.blocks):  # [:-2]):
-            # print(block)
-            spike = block(spike)
-
-        rate = spike.mean(0)
-        features = self.projection(rate)
-        return features
 
     def get_features(self, spike):
         functional.reset_net(self.blocks)
@@ -258,10 +167,6 @@ class AllConvAdLIFLISNN(torch.nn.Module):
         self.init_tau4 = 2.0  # 1 + np.abs(np.random.randn(4*in_channels)) # 2.0
         # neuron_params_drop = {**neuron_params}
 
-        if quantize:
-            self.quantize = quantize_8bit
-        else:
-            self.quantize = lambda x: x
 
         self.blocks = torch.nn.ModuleList([
             layer.Conv2d(inp_features, channels, kernel_size=3, padding=1, stride=2, bias=self.bias),
@@ -355,24 +260,6 @@ class AllConvAdLIFLISNN(torch.nn.Module):
         #spike = spike.permute(1, 2, 0).contiguous()
         return out, features
     
-    def forward_simclr(self, spike):
-        if not self.lava_dl:
-            functional.reset_net(self.blocks)
-            # print(spike.size())
-            spike = spike.permute(4, 0, 1, 2, 3).contiguous()
-        for i, block in enumerate(self.blocks):  # [:-2]):
-            # print(block)
-            spike = block(spike)
-        #if self.lava_dl:
-        #    rate = spike.mean(-1)
-        #else:
-        #    rate = spike.mean(0)
-        # last
-        #spike = spike[-1]
-        # mean
-        spike = spike.mean(0)
-        features = self.projection(spike)
-        return features
 
     def get_features(self, spike):
         if not self.lava_dl:
